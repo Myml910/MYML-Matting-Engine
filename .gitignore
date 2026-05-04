@@ -1,0 +1,45 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+dist/
+build/
+*.egg-info/
+
+# Virtual environment
+.venv/
+venv/
+env/
+
+# Env files
+.env
+.env.*
+
+# Outputs
+outputs/*
+!outputs/.gitkeep
+test_assets/output/*
+!test_assets/output/.gitkeep
+
+# Model weights / caches
+models_cache/*
+!models_cache/.gitkeep
+*.pth
+*.pt
+*.ckpt
+*.safetensors
+*.onnx
+
+# External downloaded repos
+external/
+
+# IDE / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
