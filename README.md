@@ -43,6 +43,22 @@ Health check:
 curl http://127.0.0.1:8000/api/health
 ```
 
+### Local MYML Canvas / CORS
+
+The API enables CORS for local frontend development. By default it allows:
+
+- `http://localhost:3000`
+- `http://127.0.0.1:3000`
+- `http://localhost:5173`
+- `http://127.0.0.1:5173`
+
+Override the allowed origins with `CORS_ORIGINS` as a comma-separated list:
+
+```powershell
+$env:CORS_ORIGINS = "http://localhost:3000,http://192.168.1.100:3000"
+uvicorn app.main:app --host 127.0.0.1 --port 8000 --reload
+```
+
 Remove background and save a transparent PNG:
 
 ```powershell
