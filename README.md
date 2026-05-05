@@ -2,7 +2,9 @@
 
 Local image background removal and foreground matting engine for future MYML Canvas integration.
 
-Phase 1 provides a runnable FastAPI service, CLI tools, model routing, unified image IO, postprocessing, RGBA output, mask output, and compare grids. The `dummy` backend uses a deterministic ellipse foreground mask; `inspyrenet` uses the real InSPyReNet model through `transparent-background`.
+Phase 1 provides a runnable FastAPI service, CLI tools, model routing, unified image IO, postprocessing, RGBA output, mask output, and compare grids. The `dummy` backend uses a deterministic ellipse foreground mask.
+
+The default remove-bg behavior is tuned for white or near-white product/design backgrounds. For frontend compatibility, `model=inspyrenet` is currently treated as a deprecated alias for the internal white-background remover: it removes edge-connected white or near-white background while preserving all non-background foreground content, including text, flowers, leaves, small decorations, and multiple separated elements.
 
 v1.5 adds one experimental model name, `inspyrenet_ben2`. This is not a three-model system: Inspyrenet remains the main mask, and BEN2 is used only to replace or blend the alpha inside an edge band around the Inspyrenet foreground.
 
@@ -110,18 +112,18 @@ This writes:
 
 `--input` and `--output` are required. `--mask-output` is optional. Supported CLI model names are `dummy`, `auto`, `inspyrenet`, `inspyrenet_ben2`, `birefnet`, and `ben2`; supported CLI modes are `full_foreground`, `main_subject`, `soft_matting`, and `hard_mask`.
 
-Run the real Inspyrenet backend:
+Run the default white-background remover through the frontend-compatible `model=inspyrenet` alias:
 
 ```powershell
 python scripts/run_single.py `
-  --input test_assets/input/demo.png `
+  --input test_assets/input/01_white_light_bg.png `
   --model inspyrenet `
   --mode full_foreground `
-  --output outputs/demo_inspyrenet_rgba.png `
-  --mask-output outputs/demo_inspyrenet_mask.png
+  --output outputs/test_whitebg_rgba.png `
+  --mask-output outputs/test_whitebg_mask.png
 ```
 
-The first `inspyrenet` run may download model files through `transparent-background`. CPU inference can be slow.
+This path does not load the InSPyReNet model. It flood-fills only near-white regions connected to the image edges, then lightly feathers the alpha edge.
 
 Run the v1.5 experimental Inspyrenet + BEN2 edge enhancement:
 
@@ -184,7 +186,7 @@ Fields:
 
 Returns `image/png` as a streaming response.
 
-Use Inspyrenet through the same API request format:
+Use the default white-background remover through the same API request format:
 
 ```powershell
 curl.exe -X POST "http://127.0.0.1:8000/api/matting/remove-bg" `
@@ -210,9 +212,8 @@ curl.exe -X POST "http://127.0.0.1:8000/api/matting/remove-bg" `
 
 ## Notes
 
-- `inspyrenet` lazy-loads on first use, so service startup does not load model weights.
-- The first `inspyrenet` request may download model files; CPU inference can be slow.
-- `auto` currently maps to `inspyrenet`; it does not enable BEN2 enhancement by default.
+- `model=inspyrenet` and `model=auto` currently use the internal white-background remover for white or near-white multi-element images.
+- The original InSPyReNet backend code is still present, but it is not the default remove-bg path.
 - `ben2` requires `BEN2_MODEL_PATH` to point to `BEN2_Base.pth`.
 - BEN2 also requires the official BEN2 Python package or repo code to be available in the Python environment.
 - `birefnet` is not supported in v1.5.

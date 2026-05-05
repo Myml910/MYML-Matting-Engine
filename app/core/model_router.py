@@ -6,16 +6,18 @@ from app.models.birefnet_backend import BiRefNetBackend
 from app.models.dummy_backend import DummyBackend
 from app.models.inspyrenet_backend import InspyrenetBackend
 from app.models.inspyrenet_ben2_backend import InspyrenetBEN2Backend
+from app.models.whitebg_backend import WhiteBackgroundBackend
 
 
 _DUMMY = DummyBackend()
+_WHITEBG = WhiteBackgroundBackend()
 _INSPYRENET = InspyrenetBackend()
 _BEN2 = BEN2Backend()
 
 _BACKENDS: dict[str, MattingBackend] = {
     "dummy": _DUMMY,
-    "auto": _INSPYRENET,
-    "inspyrenet": _INSPYRENET,
+    "auto": _WHITEBG,
+    "inspyrenet": _WHITEBG,
     "inspyrenet_ben2": InspyrenetBEN2Backend(_INSPYRENET, _BEN2),
     "birefnet": BiRefNetBackend(),
     "ben2": _BEN2,
