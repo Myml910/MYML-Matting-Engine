@@ -8,3 +8,4 @@ pydantic-settings>=2.0.0
 python-multipart>=0.0.9
 torch>=2.0.0
 transparent-background
+pymatting
