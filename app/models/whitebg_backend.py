@@ -60,6 +60,9 @@ GAP_MAX_AREA = 96
 GAP_RING_RADIUS = 2
 GAP_MIN_HIGH_ALPHA_RING_RATIO = 0.68
 GAP_MIN_DETAIL_RING_RATIO = 0.12
+MIN_KNOWN_TRIMAP_PIXELS = 8
+TRIMAP_UNKNOWN_MIN_RATIO = 0.00005
+TRIMAP_UNKNOWN_MAX_RATIO = 0.98
 
 
 _SEMANTIC_REMOVER: Any | None = None
@@ -107,7 +110,19 @@ def remove_connected_white_background(
     trimap = _build_trimap(sure_background, sure_foreground)
 
     # 3. Estimate soft alpha from the original image and trimap with pymatting.
-    alpha = _estimate_alpha_with_pymatting(rgb, trimap)
+    fallback_reason = _trimap_fallback_reason(trimap)
+    if fallback_reason:
+        return _fallback_to_semantic_alpha(semantic_alpha, fallback_reason)
+
+    try:
+        alpha = _estimate_alpha_with_pymatting(rgb, trimap)
+    except Exception as exc:
+        return _fallback_to_semantic_alpha(semantic_alpha, str(exc))
+
+    fallback_reason = _alpha_fallback_reason(alpha)
+    if fallback_reason:
+        return _fallback_to_semantic_alpha(semantic_alpha, fallback_reason)
+
     alpha, recovery_mask = _recover_foreground_alpha(rgb, alpha, near_white, sure_background)
     alpha_before_softening = alpha.copy()
     alpha = _soften_alpha_edges(alpha)
@@ -115,6 +130,10 @@ def remove_connected_white_background(
     alpha_before_local_refine = alpha.copy()
     alpha, uncertain_refine_region = _local_refine_alpha(rgb, alpha, semantic_alpha, sure_background, trimap)
     alpha, gap_repair_mask = _repair_small_alpha_gaps(rgb, alpha, sure_background)
+    fallback_reason = _alpha_fallback_reason(alpha)
+    if fallback_reason:
+        return _fallback_to_semantic_alpha(semantic_alpha, fallback_reason)
+
     _write_debug_images(
         near_white,
         sure_background,
@@ -132,6 +151,7 @@ def remove_connected_white_background(
         alpha_before_local_refine,
         gap_repair_mask,
     )
+    _write_fallback_debug(semantic_alpha, "fallback not triggered")
 
     return Image.fromarray(alpha, mode="L")
 
@@ -238,6 +258,69 @@ def _build_trimap(sure_background: np.ndarray, sure_foreground: np.ndarray) -> n
     return trimap
 
 
+def _trimap_fallback_reason(trimap: np.ndarray) -> str | None:
+    total = trimap.size
+    if total == 0:
+        return "trimap is empty"
+
+    sure_background_count = int(np.count_nonzero(trimap == 0))
+    sure_foreground_count = int(np.count_nonzero(trimap == 255))
+    unknown_count = int(np.count_nonzero(trimap == 128))
+    min_known = max(MIN_KNOWN_TRIMAP_PIXELS, int(total * 0.00001))
+
+    if sure_background_count < min_known:
+        return f"trimap has insufficient sure background pixels: {sure_background_count}"
+    if sure_foreground_count < min_known:
+        return f"trimap has insufficient sure foreground pixels: {sure_foreground_count}"
+
+    unknown_ratio = unknown_count / total
+    if unknown_ratio < TRIMAP_UNKNOWN_MIN_RATIO:
+        return f"trimap unknown region is too small: {unknown_ratio:.6f}"
+    if unknown_ratio > TRIMAP_UNKNOWN_MAX_RATIO:
+        return f"trimap unknown region is too large: {unknown_ratio:.6f}"
+
+    return None
+
+
+def _alpha_fallback_reason(alpha: np.ndarray) -> str | None:
+    if alpha.size == 0:
+        return "alpha result is empty"
+    if not np.all(np.isfinite(alpha)):
+        return "alpha result contains NaN or Inf"
+
+    min_alpha = int(np.min(alpha))
+    max_alpha = int(np.max(alpha))
+    if max_alpha == 0:
+        return "alpha result is fully transparent"
+    if min_alpha == 255:
+        return "alpha result is fully opaque"
+
+    return None
+
+
+def _semantic_fallback_unavailable_reason(semantic_alpha: np.ndarray) -> str | None:
+    if semantic_alpha.size == 0:
+        return "semantic alpha is empty"
+    if not np.all(np.isfinite(semantic_alpha)):
+        return "semantic alpha contains NaN or Inf"
+    if int(np.max(semantic_alpha)) == 0:
+        return "semantic alpha is fully transparent"
+    return None
+
+
+def _fallback_to_semantic_alpha(semantic_alpha: np.ndarray, reason: str) -> Image.Image:
+    semantic_reason = _semantic_fallback_unavailable_reason(semantic_alpha)
+    if semantic_reason:
+        _write_fallback_debug(semantic_alpha, f"fallback failed: {reason}; semantic alpha invalid: {semantic_reason}")
+        raise RuntimeError(
+            "semantic foreground alpha fallback unavailable after whitebg failed: "
+            f"{reason}; semantic alpha invalid: {semantic_reason}"
+        )
+
+    _write_fallback_debug(semantic_alpha, f"fallback triggered: {reason}")
+    return Image.fromarray(semantic_alpha.astype(np.uint8), mode="L")
+
+
 def _semantic_alpha_or_empty(rgb: np.ndarray) -> np.ndarray:
     try:
         return _semantic_alpha(rgb)
@@ -311,6 +394,9 @@ def _estimate_alpha_with_pymatting(rgb: np.ndarray, trimap: np.ndarray) -> np.nd
         alpha = estimate_alpha_cf(image_float, trimap_float)
     except Exception as exc:
         raise RuntimeError("pymatting alpha estimation failed for the generated trimap.") from exc
+
+    if not np.all(np.isfinite(alpha)):
+        raise RuntimeError("pymatting alpha estimation produced NaN or Inf values.")
 
     alpha = np.clip(alpha, 0.0, 1.0)
     alpha[trimap == 0] = 0.0
@@ -702,6 +788,19 @@ def _write_debug_images(
     Image.fromarray((gap_repair_mask.astype(np.uint8) * 255), mode="L").save(
         output_dir / "debug_gap_repair_mask.png"
     )
+
+
+def _write_fallback_debug(semantic_alpha: np.ndarray, reason: str) -> None:
+    debug_dir = os.getenv("WHITEBG_DEBUG_DIR")
+    if not debug_dir:
+        return
+
+    output_dir = Path(debug_dir).expanduser().resolve()
+    output_dir.mkdir(parents=True, exist_ok=True)
+    Image.fromarray(semantic_alpha.astype(np.uint8), mode="L").save(
+        output_dir / "debug_fallback_semantic_alpha.png"
+    )
+    (output_dir / "debug_fallback_reason.txt").write_text(reason, encoding="utf-8")
 
 
 def _edge_connected_region(mask: np.ndarray) -> np.ndarray:
