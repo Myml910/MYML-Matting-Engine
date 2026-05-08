@@ -1,0 +1,25 @@
+services:
+  myml-matting-engine:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        DEBIAN_MIRROR: "${DEBIAN_MIRROR:-https://mirrors.tuna.tsinghua.edu.cn}"
+        PIP_INDEX_URL: "${PIP_INDEX_URL:-https://pypi.tuna.tsinghua.edu.cn/simple}"
+        TORCH_INDEX_URL: "${TORCH_INDEX_URL:-https://mirrors.nju.edu.cn/pytorch/whl/cu126}"
+    container_name: myml-matting-engine
+    ports:
+      - "${MYML_MATTING_PORT:-8000}:8000"
+    gpus: ${DOCKER_GPUS:-all}
+    environment:
+      MYML_MATTING_DEVICE: "${MYML_MATTING_DEVICE:-cuda}"
+      MYML_MATTING_MAX_UPLOAD_MB: "${MYML_MATTING_MAX_UPLOAD_MB:-25}"
+      CORS_ORIGINS: "${CORS_ORIGINS:-http://localhost:3000,http://127.0.0.1:3000,http://localhost:5173,http://127.0.0.1:5173,http://10.0.0.44:4247}"
+      BEN2_MODEL_PATH: "${BEN2_MODEL_PATH:-/app/models_cache/BEN2_Base.pth}"
+      NVIDIA_VISIBLE_DEVICES: "${NVIDIA_VISIBLE_DEVICES:-all}"
+      NVIDIA_DRIVER_CAPABILITIES: "${NVIDIA_DRIVER_CAPABILITIES:-compute,utility}"
+    volumes:
+      - ./models_cache:/app/models_cache
+      - ./outputs:/app/outputs
+      - ./test_assets:/app/test_assets:ro
+    restart: unless-stopped
